@@ -31,17 +31,18 @@ export const dashboardStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  // ── UPDATED: lebih besar ──
   logoCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.22)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   logo: {
-    width: 28,
-    height: 28,
+    width: 38,
+    height: 38,
   },
   headerTitle: {
     fontSize: 20,
@@ -137,7 +138,6 @@ export const dashboardStyles = StyleSheet.create({
   },
 
   /* ── Individual parameter card ── */
-  // NOTE: width diisi via inline style di Dashboard.js (CARD_W)
   paramCard: {
     borderRadius: 16,
     overflow: 'hidden',

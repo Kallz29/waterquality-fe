@@ -90,7 +90,7 @@ const ParamCard = ({ item, onPress }) => (
   <TouchableOpacity
     onPress={onPress}
     activeOpacity={0.88}
-    style={[styles.paramCard, { width: CARD_W }]}   // ← width di-inject langsung
+    style={[styles.paramCard, { width: CARD_W }]}
   >
     <LinearGradient colors={item.colors} style={styles.paramCardTop} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
       <View style={[styles.paramCardStatusDot, { backgroundColor: STATUS_DOT[item.status] }]} />
@@ -203,10 +203,18 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
     ? { ...selectedData, history: getHistoryForParam(selectedParameter) }
     : null;
 
+  // ── UPDATED: show minutes → hours → days → date ──────────
   const formatLastUpdated = () => {
     if (!lastUpdated) return 'Memuat...';
-    const diff = Math.floor((Date.now() - lastUpdated.getTime()) / 60000);
-    return diff < 1 ? 'Baru saja' : `${diff} menit lalu`;
+    const diffMs  = Date.now() - lastUpdated.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1)   return 'Baru saja';
+    if (diffMin < 60)  return `${diffMin} menit lalu`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour} jam lalu`;
+    const diffDay = Math.floor(diffHour / 24);
+    if (diffDay < 7)   return `${diffDay} hari lalu`;
+    return lastUpdated.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   const overallStatusText =
@@ -214,7 +222,6 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
     overallData?.status === 'warning' ? 'Beberapa parameter mendekati batas' :
     'Semua parameter dalam batas aman';
 
-  // Bagi array qualityData jadi baris-baris, 2 card per baris
   const cardRows = [];
   for (let i = 0; i < qualityData.length; i += 2) {
     cardRows.push(qualityData.slice(i, i + 2));
@@ -230,6 +237,7 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.logoContainer}>
+            {/* ── UPDATED: logoCircle & logo lebih besar ── */}
             <View style={styles.logoCircle}>
               <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             </View>
