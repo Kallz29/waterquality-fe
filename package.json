@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build": "expo export"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",
@@ -17,9 +18,9 @@
     "expo-modules-core": "~1.12.26",
     "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
-    "react-dom": "18.2.0",
+    "react-dom": "^18.2.0",
     "react-native": "0.74.5",
-    "react-native-web": "~0.19.10",
+    "react-native-web": "^0.19.13",
     "vite": "^8.0.10"
   },
   "devDependencies": {
