@@ -1,122 +1,136 @@
 import { StyleSheet, Platform } from 'react-native';
 
 export const historyModalStyles = StyleSheet.create({
+
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F0F7FB',
   },
+
+  /* ── Header ── */
   header: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: Platform.OS === 'ios' ? 60 : 44,
     paddingBottom: 20,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
   },
   headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  headerTextContainer: {
+  headerTextWrap: {
     flex: 1,
-    paddingRight: 16,
+    paddingRight: 12,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#FFFFFF',
-    marginBottom: 4,
+    marginBottom: 3,
+    letterSpacing: 0.2,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.78)',
   },
-  headerButtons: {
+  headerBtns: {
     flexDirection: 'row',
     gap: 8,
   },
-  headerButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  headerBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerButtonIcon: {
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
+
+  /* ── List ── */
   scrollView: {
     flex: 1,
   },
-  listContainer: {
-    padding: 24,
-    gap: 12,
+  listWrap: {
+    padding: 16,
+    gap: 10,
   },
+
+  /* ── Empty ── */
+  emptyWrap: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    gap: 10,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#8BAFC0',
+  },
+
+  /* ── Card ── */
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
-    shadowColor: '#000',
+    borderColor: '#D4E8F2',
+    shadowColor: '#7CB9D8',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
     elevation: 2,
   },
-  cardHeader: {
+  cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   cardDate: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 11,
+    color: '#8BAFC0',
+    fontWeight: '500',
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 20,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
   cardBody: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  valueContainer: {
+  valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 4,
   },
   value: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#111827',
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#1A3040',
+    lineHeight: 30,
   },
   unit: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#8BAFC0',
+    fontWeight: '500',
   },
-  trendContainer: {
+  trendPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
     gap: 4,
   },
-  trendIcon: {
-    fontSize: 16,
+  trendText: {
+    fontSize: 11,
     fontWeight: '600',
-  },
-  trendLabel: {
-    fontSize: 12,
-    fontWeight: '500',
   },
 });

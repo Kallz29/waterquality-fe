@@ -132,6 +132,29 @@ export const getAllChatSessions = async () => {
   return handleResponse(res);
 };
 
+/** PATCH or PUT /api/chat/sessions/:id  — update session title */
+export const updateChatSession = async (sessionId, title) => {
+  // Try PATCH first, fall back to PUT if not supported
+  for (const method of ['PATCH', 'PUT']) {
+    try {
+      const res = await fetch(`${BASE_URL}/chat/sessions/${sessionId}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+        console.log('[updateChatSession] OK via', method, json);
+        return json;
+      }
+      console.warn('[updateChatSession]', method, 'returned', res.status);
+    } catch (err) {
+      console.warn('[updateChatSession]', method, 'error:', err.message);
+    }
+  }
+  throw new Error('updateChatSession: both PATCH and PUT failed');
+};
+
 /** GET /api/chat/sessions/:id/messages */
 export const getChatMessages = async (sessionId) => {
   const res = await fetch(`${BASE_URL}/chat/sessions/${sessionId}/messages`);

@@ -9,40 +9,29 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState('splash');
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setCurrentScreen('dashboard');
-    }, 3000);
-
+    const timer = setTimeout(() => setCurrentScreen('dashboard'), 3000);
     return () => clearTimeout(timer);
   }, []);
-
-  const handleNavigateToAbout = () => {
-    setCurrentScreen('about');
-  };
-
-  const handleNavigateToDashboard = () => {
-    setCurrentScreen('dashboard');
-  };
-
-  const handleNavigateToAI = () => {
-    setCurrentScreen('ai-assistant');
-  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <StatusBar barStyle="light-content" backgroundColor="#5AA3C8" />
+
       {currentScreen === 'splash' && <SplashScreen />}
+
       {currentScreen === 'dashboard' && (
-        <Dashboard 
-          onNavigateToAbout={handleNavigateToAbout}
-          onNavigateToAI={handleNavigateToAI}
+        <Dashboard
+          onNavigateToAbout={() => setCurrentScreen('about')}
+          onNavigateToAI={() => setCurrentScreen('ai-assistant')}
         />
       )}
+
       {currentScreen === 'about' && (
-        <AboutUs onBack={handleNavigateToDashboard} />
+        <AboutUs onBack={() => setCurrentScreen('dashboard')} />
       )}
+
       {currentScreen === 'ai-assistant' && (
-        <AIAssistant onBack={handleNavigateToDashboard} />
+        <AIAssistant onBack={() => setCurrentScreen('dashboard')} />
       )}
     </SafeAreaView>
   );

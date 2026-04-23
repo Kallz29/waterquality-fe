@@ -1,272 +1,288 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, Animated, Modal, Image, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Animated, ActivityIndicator,
+  TouchableWithoutFeedback,
 } from 'react-native';
-import { colors } from '../constants/colors';
+import { Ionicons } from '@expo/vector-icons';
 import { styles } from '../styles/aiAssistantStyles';
 import {
-  createChatSession,
-  getAllChatSessions,
-  getChatMessages,
-  sendChatMessage,
+  createChatSession, getAllChatSessions,
+  getChatMessages, sendChatMessage, updateChatSession,
 } from '../services/api';
- 
-// Hapus formatting Markdown supaya tidak muncul sebagai bintang-bintang di React Native
+
 const stripMarkdown = (text) => {
   if (!text) return '';
   return text
-    .replace(/\*\*(.+?)\*\*/g, '$1')   // **bold** → bold
-    .replace(/\*(.+?)\*/g, '$1')        // *italic* → italic
-    .replace(/^[\*\-] /gm, '• ')        // * bullet / - bullet → •
-    .replace(/#+\s/g, '')               // ## heading → heading
-    .replace(/`(.+?)`/g, '$1')          // `code` → code
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^[\*\-] /gm, '• ')
+    .replace(/#+\s/g, '')
+    .replace(/`(.+?)`/g, '$1')
     .trim();
 };
- 
-const AIAssistant = ({ onBack }) => {
-  const [messages, setMessages] = useState([
-    {
-      id: '1',
-      text: 'Halo! Saya asisten AI UniFlow. Saya siap membantu Anda dengan pertanyaan seputar kualitas air, parameter monitoring, dan standar PERMENKES. Ada yang bisa saya bantu?',
-      sender: 'ai',
-      timestamp: new Date(),
-    },
-  ]);
+
+const SUGGESTED = [
+  'Apa standar pH air minum yang aman?',
+  'Berapa suhu air yang ideal?',
+  'Apa itu TDS dan berapa batas amannya?',
+  'Bagaimana cara mengukur kekeruhan air?',
+];
+
+const buildTitle = (text) => {
+  const trimmed = text.trim();
+  return trimmed.length > 40 ? trimmed.slice(0, 40).trimEnd() + '...' : trimmed;
+};
+
+const mapSessions = (sessions) =>
+  sessions.map((s) => ({
+    id: s.id,
+    date: new Date(s.created_at).toLocaleDateString('id-ID', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    }),
+    preview: s.title && s.title !== 'Sesi Baru' ? s.title : 'Sesi Baru',
+  }));
+
+// Field user: hanya field yang jelas milik pesan user
+const getUserText = (item) =>
+  item.user_message ?? item.user_text ?? item.question ?? item.human ?? '';
+
+// Field AI: hanya field yang jelas milik respons AI
+const getAiText = (item) =>
+  item.ai_response ?? item.bot_message ?? item.assistant ?? item.answer ?? item.reply ?? '';
+
+const GREETING = 'Halo! Saya asisten AI UniFlow. Siap membantu seputar kualitas air, parameter monitoring, dan standar PERMENKES. Ada yang bisa saya bantu?';
+const GREETING_SHORT = 'Halo! Ada yang bisa saya bantu?';
+
+export default function AIAssistant({ onBack }) {
+  const [messages, setMessages] = useState([{
+    id: '1', text: GREETING, sender: 'ai', timestamp: new Date(),
+  }]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [isFirstMessage, setIsFirstMessage] = useState(true);
   const [loadingSession, setLoadingSession] = useState(true);
-  // FIX: Tambah state error supaya user tahu kalau koneksi gagal
   const [sessionError, setSessionError] = useState(null);
-  const scrollViewRef = useRef(null);
-  const typingAnimation = useRef(new Animated.Value(0)).current;
- 
-  const suggestedQuestions = [
-    'Apa standar pH air minum yang aman?',
-    'Berapa suhu air yang ideal?',
-    'Apa itu TDS dan berapa batas amannya?',
-    'Bagaimana cara mengukur kekeruhan air?',
-  ];
- 
-  useEffect(() => {
-    initSession();
-  }, []);
- 
+
+  const scrollRef = useRef(null);
+  const typingAnim = useRef(new Animated.Value(0)).current;
+  const drawerAnim = useRef(new Animated.Value(-280)).current;
+
+  const refreshHistory = async () => {
+    try {
+      const res = await getAllChatSessions();
+      setChatHistory(mapSessions(res.data || []));
+      return res.data || [];
+    } catch (err) {
+      console.error('refreshHistory:', err.message);
+      return [];
+    }
+  };
+
+  useEffect(() => { initSession(); }, []);
+
   const initSession = async () => {
     try {
       setLoadingSession(true);
       setSessionError(null);
- 
+
       const sessionsRes = await getAllChatSessions();
       const sessions = sessionsRes.data || [];
- 
+      setChatHistory(mapSessions(sessions));
+
       let sessionId;
       if (sessions.length > 0) {
         sessionId = sessions[0].id;
-        const msgRes = await getChatMessages(sessionId);
-        const msgs = (msgRes.data || []).flatMap((item) => [
-          { id: `u-${item.id}`, text: item.user_message, sender: 'user', timestamp: new Date(item.created_at) },
-          { id: `a-${item.id}`, text: stripMarkdown(item.ai_response), sender: 'ai', timestamp: new Date(item.created_at) },
-        ]);
-        if (msgs.length > 0) setMessages(msgs);
+        await loadMessagesForSession(sessionId);
       } else {
-        const newSession = await createChatSession('Sesi Baru');
-        // FIX: Backend return { data: { id: ... } }
-        sessionId = newSession.data.id;
+        const res = await createChatSession('Sesi Baru');
+        sessionId = res.data.id;
+        setMessages([{ id: '1', text: GREETING, sender: 'ai', timestamp: new Date() }]);
+        setIsFirstMessage(true);
       }
- 
+
       setCurrentSessionId(sessionId);
- 
-      setChatHistory(sessions.map((s) => ({
-        id: s.id,
-        date: new Date(s.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
-        preview: s.title || 'Sesi Chat',
-      })));
     } catch (err) {
-      console.error('Init session error:', err.message);
-      // FIX: Simpan error supaya bisa ditampilkan & ada tombol retry
       setSessionError(err.message);
     } finally {
       setLoadingSession(false);
     }
   };
- 
-  const loadSession = async (sessionId) => {
-    try {
-      setShowHistory(false);
-      setCurrentSessionId(sessionId);
-      const msgRes = await getChatMessages(sessionId);
-      const msgs = (msgRes.data || []).flatMap((item) => [
-        { id: `u-${item.id}`, text: item.user_message, sender: 'user', timestamp: new Date(item.created_at) },
-        { id: `a-${item.id}`, text: stripMarkdown(item.ai_response), sender: 'ai', timestamp: new Date(item.created_at) },
-      ]);
-      setMessages(msgs.length > 0 ? msgs : [{
-        id: '1', text: 'Halo! Ada yang bisa saya bantu?', sender: 'ai', timestamp: new Date(),
-      }]);
-    } catch (err) {
-      console.error('Load session error:', err.message);
+
+  const loadMessagesForSession = async (sessionId) => {
+    const msgRes = await getChatMessages(sessionId);
+    const rawMsgs = msgRes.data || msgRes || [];
+
+    // Backend pakai role-based: { id, role: "user"|"assistant", content, created_at }
+    const msgs = rawMsgs.map((item) => ({
+      id: String(item.id),
+      text: item.role === 'assistant' ? stripMarkdown(item.content) : (item.content || ''),
+      sender: item.role === 'assistant' ? 'ai' : 'user',
+      timestamp: new Date(item.created_at),
+    }));
+
+    if (msgs.length > 0) {
+      setMessages(msgs);
+      setIsFirstMessage(false);
+    } else {
+      setMessages([{ id: '1', text: GREETING_SHORT, sender: 'ai', timestamp: new Date() }]);
+      setIsFirstMessage(true);
     }
   };
- 
-  const newSession = async () => {
+
+  const openDrawer = async () => {
+    await refreshHistory();
+    setDrawerOpen(true);
+    Animated.spring(drawerAnim, { toValue: 0, useNativeDriver: true, tension: 60, friction: 12 }).start();
+  };
+
+  const closeDrawer = () => {
+    Animated.timing(drawerAnim, { toValue: -280, duration: 220, useNativeDriver: true })
+      .start(() => setDrawerOpen(false));
+  };
+
+  const loadSession = async (sessionId) => {
+    closeDrawer();
+    setCurrentSessionId(sessionId);
     try {
-      setShowHistory(false);
+      await loadMessagesForSession(sessionId);
+    } catch (err) {
+      console.error(err.message);
+    }
+  };
+
+  const newSession = async () => {
+    closeDrawer();
+    try {
       const res = await createChatSession('Sesi Baru');
       const sessionId = res.data.id;
       setCurrentSessionId(sessionId);
-      setMessages([{
-        id: '1',
-        text: 'Halo! Saya asisten AI UniFlow. Ada yang bisa saya bantu?',
-        sender: 'ai',
-        timestamp: new Date(),
-      }]);
-      const sessionsRes = await getAllChatSessions();
-      setChatHistory((sessionsRes.data || []).map((s) => ({
-        id: s.id,
-        date: new Date(s.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
-        preview: s.title || 'Sesi Chat',
-      })));
+      setIsFirstMessage(true);
+      setMessages([{ id: '1', text: GREETING_SHORT, sender: 'ai', timestamp: new Date() }]);
+      await refreshHistory();
     } catch (err) {
-      console.error('New session error:', err.message);
+      console.error(err.message);
     }
   };
- 
+
   useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages, isTyping]);
- 
+
   useEffect(() => {
     if (isTyping) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(typingAnimation, { toValue: 1, duration: 600, useNativeDriver: true }),
-          Animated.timing(typingAnimation, { toValue: 0, duration: 600, useNativeDriver: true }),
-        ])
-      ).start();
+      Animated.loop(Animated.sequence([
+        Animated.timing(typingAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(typingAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ])).start();
     } else {
-      typingAnimation.setValue(0);
+      typingAnim.setValue(0);
     }
   }, [isTyping]);
- 
+
   const handleSend = async () => {
-    // FIX: Guard yang lebih jelas — kalau session null, coba init ulang dulu
     if (!inputText.trim()) return;
- 
-    if (!currentSessionId) {
-      // Kalau session belum ada, coba buat baru dulu
+
+    let sessionId = currentSessionId;
+    if (!sessionId) {
       try {
         const res = await createChatSession('Sesi Baru');
-        setCurrentSessionId(res.data.id);
-      } catch (err) {
-        setMessages((prev) => [...prev, {
-          id: Date.now().toString(),
-          text: 'Gagal terhubung ke server. Pastikan koneksi internet kamu aktif.',
-          sender: 'ai',
-          timestamp: new Date(),
+        sessionId = res.data.id;
+        setCurrentSessionId(sessionId);
+        setIsFirstMessage(true);
+      } catch {
+        setMessages((p) => [...p, {
+          id: Date.now().toString(), text: 'Gagal terhubung ke server.', sender: 'ai', timestamp: new Date(),
         }]);
         return;
       }
     }
- 
+
     const userText = inputText.trim();
-    const userMessage = {
-      id: Date.now().toString(),
-      text: userText,
-      sender: 'user',
-      timestamp: new Date(),
-    };
- 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((p) => [...p, {
+      id: Date.now().toString(), text: userText, sender: 'user', timestamp: new Date(),
+    }]);
     setInputText('');
     setIsTyping(true);
- 
+
+    const wasFirstMessage = isFirstMessage;
+    if (isFirstMessage) setIsFirstMessage(false);
+
     try {
-      const res = await sendChatMessage(currentSessionId, userText);
-      // FIX: Backend return { ai_response: "..." } di root, bukan di res.data
-      const aiText = stripMarkdown(res.ai_response || res.data?.ai_response || 'Maaf, tidak ada respons dari AI.');
-      const aiMessage = {
+      const res = await sendChatMessage(sessionId, userText);
+      // Support both role-based { content } and legacy { ai_response }
+      const rawAi = res.content || res.ai_response || res.data?.content || res.data?.ai_response || 'Maaf, tidak ada respons.';
+      const aiText = stripMarkdown(rawAi);
+      setMessages((p) => [...p, {
+        id: (Date.now() + 1).toString(), text: aiText, sender: 'ai', timestamp: new Date(),
+      }]);
+
+      // Update title setelah pesan pertama berhasil terkirim
+      if (wasFirstMessage) {
+        try {
+          const newTitle = buildTitle(userText);
+          console.log('[AIAssistant] updating title to:', newTitle, 'for session:', sessionId);
+          await updateChatSession(sessionId, newTitle);
+          console.log('[AIAssistant] title updated OK');
+        } catch (err) {
+          console.error('[AIAssistant] updateChatSession failed:', err.message);
+        }
+      }
+    } catch (err) {
+      setMessages((p) => [...p, {
         id: (Date.now() + 1).toString(),
-        text: aiText,
+        text: 'Maaf, terjadi kesalahan: ' + err.message,
         sender: 'ai',
         timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          text: `Maaf, terjadi kesalahan: ${err.message}`,
-          sender: 'ai',
-          timestamp: new Date(),
-        },
-      ]);
+      }]);
     } finally {
       setIsTyping(false);
+      refreshHistory();
     }
   };
- 
-  const handleSuggestedQuestion = (question) => setInputText(question);
- 
-  const formatTime = (date) =>
-    date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
- 
+
+  const formatTime = (d) => d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
   const TypingIndicator = () => (
-    <View style={styles.typingContainer}>
+    <View style={styles.rowAI}>
+      <View style={styles.aiAvatar}><View style={styles.aiAvatarDot} /></View>
       <View style={styles.typingBubble}>
-        <View style={styles.typingDotsContainer}>
-          {[0, 1, 2].map((i) => (
-            <Animated.View
-              key={i}
-              style={[styles.typingDot, {
-                opacity: typingAnimation.interpolate({
-                  inputRange: [0, 0.5, 1],
-                  outputRange: i === 0 ? [0.3, 1, 0.3] : i === 1 ? [0.3, 0.3, 1] : [1, 0.3, 0.3],
-                }),
-              }]}
-            />
-          ))}
-        </View>
+        {[0, 1, 2].map((i) => (
+          <Animated.View key={i} style={[styles.typingDot, {
+            opacity: typingAnim.interpolate({
+              inputRange: [0, 0.5, 1],
+              outputRange: i === 0 ? [0.25, 1, 0.25] : i === 1 ? [0.25, 0.25, 1] : [1, 0.25, 0.25],
+            }),
+          }]} />
+        ))}
       </View>
     </View>
   );
- 
-  // FIX: Kalau loading session gagal, tampilkan error + tombol retry
-  if (loadingSession) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#22C55E" />
-        <Text style={{ marginTop: 8, color: '#6B7280' }}>Memuat sesi chat...</Text>
-      </View>
-    );
-  }
- 
-  if (sessionError) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
-        <Text style={{ fontSize: 32, marginBottom: 12 }}>⚠️</Text>
-        <Text style={{ fontSize: 16, fontWeight: '700', color: '#DC2626', marginBottom: 8 }}>
-          Gagal terhubung ke server
-        </Text>
-        <Text style={{ fontSize: 13, color: '#6B7280', textAlign: 'center', marginBottom: 20 }}>
-          {sessionError}
-        </Text>
-        <TouchableOpacity
-          onPress={initSession}
-          style={{ backgroundColor: '#22C55E', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 }}
-        >
-          <Text style={{ color: '#fff', fontWeight: '700' }}>Coba Lagi</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onBack} style={{ marginTop: 12 }}>
-          <Text style={{ color: '#6B7280' }}>← Kembali</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
- 
+
+  if (loadingSession) return (
+    <View style={styles.centerScreen}>
+      <ActivityIndicator size="large" color="#7CB9D8" />
+      <Text style={styles.loadingText}>Memuat sesi chat...</Text>
+    </View>
+  );
+
+  if (sessionError) return (
+    <View style={styles.centerScreen}>
+      <View style={styles.errorIconWrap}><Ionicons name="wifi-outline" size={28} color="#7CB9D8" /></View>
+      <Text style={styles.errorTitle}>Gagal terhubung ke server</Text>
+      <Text style={styles.errorDesc}>{sessionError}</Text>
+      <TouchableOpacity onPress={initSession} style={styles.retryBtn}>
+        <Text style={styles.retryText}>Coba Lagi</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onBack} style={{ marginTop: 12 }}>
+        <Text style={styles.errorBack}>Kembali</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -275,121 +291,119 @@ const AIAssistant = ({ onBack }) => {
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.hamburgerButton}>
-          <Text style={styles.hamburgerIcon}>☰</Text>
+        <TouchableOpacity onPress={openDrawer} style={styles.headerBtn}>
+          <View style={styles.hamburgerLine} />
+          <View style={styles.hamburgerLine} />
+          <View style={styles.hamburgerLine} />
         </TouchableOpacity>
-        <View style={styles.logoContainer}>
-          {/* FIX: Hapus uri web yang tidak valid, pakai asset lokal */}
-          <Image
-            source={require('../assets/icon.png')}
-            style={styles.logoImage}
-          />
+        <View style={styles.headerTextWrap}>
+          <Text style={styles.headerTitle}>UniFlow AI</Text>
+          <Text style={styles.headerSub}>Asisten monitoring kualitas air</Text>
         </View>
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.headerTitle}>UniFlow</Text>
-          <Text style={styles.headerSubtitle}>Siap membantu Anda menjaga kualitas air</Text>
-        </View>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>←</Text>
+        <TouchableOpacity onPress={onBack} style={styles.headerBtn}>
+          <Ionicons name="chevron-back" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
- 
-      {/* History Modal */}
-      <Modal visible={showHistory} animationType="slide" transparent onRequestClose={() => setShowHistory(false)}>
-        <View style={styles.historyModalOverlay}>
-          <TouchableOpacity style={styles.historyModalBackground} activeOpacity={1} onPress={() => setShowHistory(false)} />
-          <View style={styles.historyModalContent}>
-            <View style={styles.historyHeader}>
-              <Text style={styles.historyTitle}>Riwayat Chat</Text>
-              <TouchableOpacity onPress={newSession} style={{ marginRight: 8 }}>
-                <Text style={{ color: '#22C55E', fontWeight: '600' }}>+ Baru</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowHistory(false)} style={styles.historyCloseButton}>
-                <Text style={styles.historyCloseText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.historyList}>
-              {chatHistory.length > 0 ? chatHistory.map((item) => (
-                <TouchableOpacity key={item.id} style={styles.historyItem} onPress={() => loadSession(item.id)}>
-                  <Text style={styles.historyItemPreview}>{item.preview}</Text>
-                  <Text style={styles.historyItemDate}>{item.date}</Text>
-                </TouchableOpacity>
-              )) : (
-                <Text style={styles.historyEmptyText}>Belum ada riwayat chat</Text>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
- 
+
       {/* Messages */}
       <ScrollView
-        ref={scrollViewRef}
-        style={styles.messagesContainer}
+        ref={scrollRef}
+        style={styles.messages}
         contentContainerStyle={styles.messagesContent}
-        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
-        {messages.map((message) => (
-          <View
-            key={message.id}
-            style={[styles.messageRow, message.sender === 'user' ? styles.messageRowUser : styles.messageRowAI]}
-          >
-            <View style={[styles.messageBubble, message.sender === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI]}>
-              <Text style={[styles.messageText, message.sender === 'user' ? styles.messageTextUser : styles.messageTextAI]}>
-                {message.text}
+        {messages.map((msg) => (
+          <View key={msg.id} style={msg.sender === 'user' ? styles.rowUser : styles.rowAI}>
+            {msg.sender === 'ai' && (
+              <View style={styles.aiAvatar}><View style={styles.aiAvatarDot} /></View>
+            )}
+            <View style={[styles.bubble, msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAI]}>
+              <Text style={msg.sender === 'user' ? styles.bubbleTextUser : styles.bubbleTextAI}>
+                {msg.text}
               </Text>
-              <Text style={[styles.messageTime, message.sender === 'user' ? styles.messageTimeUser : styles.messageTimeAI]}>
-                {formatTime(message.timestamp)}
+              <Text style={msg.sender === 'user' ? styles.timeUser : styles.timeAI}>
+                {formatTime(msg.timestamp)}
               </Text>
             </View>
           </View>
         ))}
         {isTyping && <TypingIndicator />}
         {messages.length === 1 && (
-          <View style={styles.suggestedContainer}>
-            <Text style={styles.suggestedTitle}>Pertanyaan yang sering diajukan:</Text>
+          <View style={styles.suggestedWrap}>
+            <Text style={styles.suggestedLabel}>Pertanyaan yang sering diajukan:</Text>
             <View style={styles.suggestedList}>
-              {suggestedQuestions.map((q, i) => (
-                <TouchableOpacity key={i} onPress={() => handleSuggestedQuestion(q)} style={styles.suggestedButton}>
-                  <Text style={styles.suggestedButtonText}>{q}</Text>
+              {SUGGESTED.map((q, i) => (
+                <TouchableOpacity key={i} onPress={() => setInputText(q)} style={styles.suggestedPill}>
+                  <Text style={styles.suggestedPillText}>{q}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
         )}
       </ScrollView>
- 
-      {/* Mascot */}
-      <View style={styles.mascotContainer} pointerEvents="none">
-        <View style={styles.mascotFallback}>
-          <Text style={styles.mascotEmoji}>🤖</Text>
-        </View>
-      </View>
- 
+
       {/* Input */}
-      <View style={styles.inputContainer}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Tanyakan sesuatu..."
-            placeholderTextColor={colors.text?.tertiary || '#9CA3AF'}
-            multiline
-            maxLength={500}
-          />
-          <TouchableOpacity
-            onPress={handleSend}
-            // FIX: Tombol aktif kalau ada teks, meskipun session belum ready (akan dibuat otomatis)
-            disabled={!inputText.trim() || isTyping}
-            style={[styles.sendButton, (!inputText.trim() || isTyping) && styles.sendButtonDisabled]}
-          >
-            <Text style={styles.sendButtonText}>➤</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.inputBar}>
+        <TextInput
+          style={styles.input}
+          value={inputText}
+          onChangeText={setInputText}
+          placeholder="Tanyakan sesuatu..."
+          placeholderTextColor="#A8C8D8"
+          multiline
+          maxLength={500}
+        />
+        <TouchableOpacity
+          onPress={handleSend}
+          disabled={!inputText.trim() || isTyping}
+          style={[styles.sendBtn, (!inputText.trim() || isTyping) && styles.sendBtnDisabled]}
+        >
+          <Ionicons name="arrow-up" size={18} color="#fff" />
+        </TouchableOpacity>
       </View>
+
+      {/* Drawer overlay */}
+      {drawerOpen && (
+        <TouchableWithoutFeedback onPress={closeDrawer}>
+          <View style={styles.overlay} />
+        </TouchableWithoutFeedback>
+      )}
+
+      {/* Drawer */}
+      <Animated.View style={[styles.drawer, { transform: [{ translateX: drawerAnim }] }]}>
+        <View style={styles.drawerHead}>
+          <Text style={styles.drawerTitle}>Riwayat Chat</Text>
+          <View style={styles.drawerHeadRight}>
+            <TouchableOpacity onPress={newSession} style={styles.drawerNewBtn}>
+              <Text style={styles.drawerNewText}>+ Baru</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={closeDrawer} style={styles.drawerCloseBtn}>
+              <Ionicons name="close" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <Text style={styles.drawerLabel}>SESI SEBELUMNYA</Text>
+        <ScrollView style={styles.drawerList} showsVerticalScrollIndicator={false}>
+          {chatHistory.length > 0 ? chatHistory.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              onPress={() => loadSession(item.id)}
+              style={[styles.sessionItem, item.id === currentSessionId && styles.sessionItemActive]}
+            >
+              <Text
+                style={[styles.sessionTitle, item.id === currentSessionId && styles.sessionTitleActive]}
+                numberOfLines={2}
+              >
+                {item.preview}
+              </Text>
+              <Text style={styles.sessionDate}>{item.date}</Text>
+            </TouchableOpacity>
+          )) : (
+            <Text style={styles.sessionEmpty}>Belum ada riwayat chat</Text>
+          )}
+        </ScrollView>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
-};
- 
-export default AIAssistant;
+}
