@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # UniFlow - React Native App
 
 Aplikasi mobile monitoring kualitas air untuk universitas dengan React Native dan Expo.
@@ -118,3 +119,6 @@ Edit file `data/teamMembers.js` untuk mengubah data anggota tim:
   image: require('../assets/team1.jpg'),
 }
 ```
+=======
+# waterquality-fe
+>>>>>>> c591669e7259ec408239467b81df9247ccaa7e6a
