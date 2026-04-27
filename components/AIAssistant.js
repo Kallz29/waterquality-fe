@@ -2,13 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, Animated, ActivityIndicator,
-  TouchableWithoutFeedback,
+  TouchableWithoutFeedback, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { styles } from '../styles/aiAssistantStyles';
 import {
   createChatSession, getAllChatSessions,
   getChatMessages, sendChatMessage, updateChatSession,
+  deleteChatSession,
 } from '../services/api';
 
 const stripMarkdown = (text) => {
@@ -43,14 +44,6 @@ const mapSessions = (sessions) =>
     preview: s.title && s.title !== 'Sesi Baru' ? s.title : 'Sesi Baru',
   }));
 
-// Field user: hanya field yang jelas milik pesan user
-const getUserText = (item) =>
-  item.user_message ?? item.user_text ?? item.question ?? item.human ?? '';
-
-// Field AI: hanya field yang jelas milik respons AI
-const getAiText = (item) =>
-  item.ai_response ?? item.bot_message ?? item.assistant ?? item.answer ?? item.reply ?? '';
-
 const GREETING = 'Halo! Saya asisten AI UniFlow. Siap membantu seputar kualitas air, parameter monitoring, dan standar PERMENKES. Ada yang bisa saya bantu?';
 const GREETING_SHORT = 'Halo! Ada yang bisa saya bantu?';
 
@@ -66,6 +59,7 @@ export default function AIAssistant({ onBack }) {
   const [isFirstMessage, setIsFirstMessage] = useState(true);
   const [loadingSession, setLoadingSession] = useState(true);
   const [sessionError, setSessionError] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const scrollRef = useRef(null);
   const typingAnim = useRef(new Animated.Value(0)).current;
@@ -74,8 +68,9 @@ export default function AIAssistant({ onBack }) {
   const refreshHistory = async () => {
     try {
       const res = await getAllChatSessions();
-      setChatHistory(mapSessions(res.data || []));
-      return res.data || [];
+      const sessions = res.data || [];
+      setChatHistory(mapSessions(sessions));
+      return sessions;
     } catch (err) {
       console.error('refreshHistory:', err.message);
       return [];
@@ -116,7 +111,6 @@ export default function AIAssistant({ onBack }) {
     const msgRes = await getChatMessages(sessionId);
     const rawMsgs = msgRes.data || msgRes || [];
 
-    // Backend pakai role-based: { id, role: "user"|"assistant", content, created_at }
     const msgs = rawMsgs.map((item) => ({
       id: String(item.id),
       text: item.role === 'assistant' ? stripMarkdown(item.content) : (item.content || ''),
@@ -168,6 +162,48 @@ export default function AIAssistant({ onBack }) {
     }
   };
 
+  const handleDeleteSession = (sessionId, sessionPreview) => {
+    Alert.alert(
+      'Hapus Sesi',
+      `Hapus sesi "${sessionPreview}"?\n\nSemua pesan dalam sesi ini akan dihapus permanen.`,
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingId(sessionId);
+            try {
+              await deleteChatSession(sessionId);
+
+              if (sessionId === currentSessionId) {
+                // Ambil sesi tersisa setelah hapus
+                const remaining = (await refreshHistory()).filter((s) => s.id !== sessionId);
+                if (remaining.length > 0) {
+                  setCurrentSessionId(remaining[0].id);
+                  await loadMessagesForSession(remaining[0].id);
+                } else {
+                  // Tidak ada sesi tersisa — buat baru
+                  const res = await createChatSession('Sesi Baru');
+                  const newId = res.data.id;
+                  setCurrentSessionId(newId);
+                  setMessages([{ id: '1', text: GREETING_SHORT, sender: 'ai', timestamp: new Date() }]);
+                  setIsFirstMessage(true);
+                }
+              }
+
+              await refreshHistory();
+            } catch (err) {
+              Alert.alert('Gagal Menghapus', err.message);
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages, isTyping]);
@@ -213,20 +249,15 @@ export default function AIAssistant({ onBack }) {
 
     try {
       const res = await sendChatMessage(sessionId, userText);
-      // Support both role-based { content } and legacy { ai_response }
       const rawAi = res.content || res.ai_response || res.data?.content || res.data?.ai_response || 'Maaf, tidak ada respons.';
       const aiText = stripMarkdown(rawAi);
       setMessages((p) => [...p, {
         id: (Date.now() + 1).toString(), text: aiText, sender: 'ai', timestamp: new Date(),
       }]);
 
-      // Update title setelah pesan pertama berhasil terkirim
       if (wasFirstMessage) {
         try {
-          const newTitle = buildTitle(userText);
-          console.log('[AIAssistant] updating title to:', newTitle, 'for session:', sessionId);
-          await updateChatSession(sessionId, newTitle);
-          console.log('[AIAssistant] title updated OK');
+          await updateChatSession(sessionId, buildTitle(userText));
         } catch (err) {
           console.error('[AIAssistant] updateChatSession failed:', err.message);
         }
@@ -386,19 +417,34 @@ export default function AIAssistant({ onBack }) {
         <Text style={styles.drawerLabel}>SESI SEBELUMNYA</Text>
         <ScrollView style={styles.drawerList} showsVerticalScrollIndicator={false}>
           {chatHistory.length > 0 ? chatHistory.map((item) => (
-            <TouchableOpacity
+            <View
               key={item.id}
-              onPress={() => loadSession(item.id)}
               style={[styles.sessionItem, item.id === currentSessionId && styles.sessionItemActive]}
             >
-              <Text
-                style={[styles.sessionTitle, item.id === currentSessionId && styles.sessionTitleActive]}
-                numberOfLines={2}
+              <TouchableOpacity
+                onPress={() => loadSession(item.id)}
+                style={styles.sessionItemContent}
               >
-                {item.preview}
-              </Text>
-              <Text style={styles.sessionDate}>{item.date}</Text>
-            </TouchableOpacity>
+                <Text
+                  style={[styles.sessionTitle, item.id === currentSessionId && styles.sessionTitleActive]}
+                  numberOfLines={2}
+                >
+                  {item.preview}
+                </Text>
+                <Text style={styles.sessionDate}>{item.date}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleDeleteSession(item.id, item.preview)}
+                style={styles.sessionDeleteBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {deletingId === item.id
+                  ? <ActivityIndicator size="small" color="#E57373" />
+                  : <Ionicons name="trash-outline" size={15} color="#B0C8D4" />
+                }
+              </TouchableOpacity>
+            </View>
           )) : (
             <Text style={styles.sessionEmpty}>Belum ada riwayat chat</Text>
           )}

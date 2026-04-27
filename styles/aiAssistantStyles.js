@@ -162,14 +162,30 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.9, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
   },
   drawerList: { flex: 1, paddingHorizontal: 10, paddingBottom: 16 },
+
+  /* ── Session Item (dengan delete) ── */
   sessionItem: {
-    padding: 11, borderRadius: 10,
-    marginBottom: 2, borderWidth: 1, borderColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingLeft: 11,
+    paddingRight: 8,
+    borderRadius: 10,
+    marginBottom: 2,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   sessionItemActive: { backgroundColor: '#EAF4FB', borderColor: '#C5DDE8' },
+  sessionItemContent: { flex: 1, paddingRight: 6 },
   sessionTitle: { fontSize: 12.5, fontWeight: '500', color: '#3A6070', marginBottom: 3, lineHeight: 16 },
   sessionTitleActive: { fontWeight: '700', color: '#155272' },
   sessionDate: { fontSize: 10, color: '#8BAFC0' },
+  sessionDeleteBtn: {
+    width: 28, height: 28, borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'transparent',
+    flexShrink: 0,
+  },
   sessionEmpty: { fontSize: 12, color: '#8BAFC0', textAlign: 'center', marginTop: 20 },
 
   /* ── Error / Loading ── */

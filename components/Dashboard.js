@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, Image, TouchableOpacity,
   ActivityIndicator, RefreshControl, Modal, Dimensions,
+  TextInput, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +12,7 @@ import HistoryModal from './HistoryModal';
 import {
   getAllSensors, getLatestSensor, getSensorStats,
   getAlerts, markAlertRead, markAllAlertsRead, getThreshold,
+  updateThreshold, resetThreshold,
 } from '../services/api';
 import { dashboardStyles as styles } from '../styles/dashboardStyles';
 
@@ -79,10 +81,9 @@ const SEVERITY_BG   = { low: '#FEF3C7', medium: '#FED7AA', high: '#FEE2E2', crit
 const SEVERITY_TEXT = { low: '#92400E', medium: '#C2410C', high: '#991B1B', critical: '#7F1D1D' };
 const SEVERITY_LABEL= { low: 'Rendah', medium: 'Sedang', high: 'Tinggi', critical: 'Kritis' };
 
-// Hitung lebar card sekali di module level
 const { width: SCREEN_W } = Dimensions.get('window');
-const GRID_PADDING = 16;   // paddingHorizontal kiri & kanan
-const GRID_GAP     = 10;   // jarak antar 2 kolom
+const GRID_PADDING = 16;
+const GRID_GAP     = 10;
 const CARD_W = Math.floor((SCREEN_W - GRID_PADDING * 2 - GRID_GAP) / 2);
 
 // ─── Parameter Card ────────────────────────────────────────
@@ -115,6 +116,12 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
   const [selectedParameter, setSelectedParameter] = useState(null);
   const [showOverallHistory, setShowOverallHistory] = useState(false);
   const [showAlertsModal, setShowAlertsModal] = useState(false);
+
+  // ── Threshold modal state ──
+  const [showThresholdModal, setShowThresholdModal] = useState(false);
+  const [thresholdForm, setThresholdForm]           = useState(null);
+  const [thresholdSaving, setThresholdSaving]       = useState(false);
+  const [thresholdMsg, setThresholdMsg]             = useState(null);
 
   const [qualityData, setQualityData] = useState([]);
   const [overallData, setOverallData] = useState(null);
@@ -192,6 +199,69 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
     } catch (err) { console.error(err); }
   };
 
+  // ── Threshold handlers ──────────────────────────────────
+  const openThreshold = () => {
+    setThresholdForm(threshold ? { ...threshold } : {
+      ph_min: '6.5', ph_max: '8.5',
+      temp_min: '25', temp_max: '30',
+      tds_min: '0', tds_max: '500',
+      tss_min: '0', tss_max: '25',
+    });
+    setThresholdMsg(null);
+    setShowThresholdModal(true);
+  };
+
+  const handleSaveThreshold = async () => {
+    setThresholdSaving(true);
+    try {
+      const payload = {
+        ph_min:   parseFloat(thresholdForm.ph_min),
+        ph_max:   parseFloat(thresholdForm.ph_max),
+        temp_min: parseFloat(thresholdForm.temp_min),
+        temp_max: parseFloat(thresholdForm.temp_max),
+        tds_min:  parseFloat(thresholdForm.tds_min),
+        tds_max:  parseFloat(thresholdForm.tds_max),
+        tss_min:  parseFloat(thresholdForm.tss_min),
+        tss_max:  parseFloat(thresholdForm.tss_max),
+      };
+      // Validate numbers
+      for (const [k, v] of Object.entries(payload)) {
+        if (isNaN(v)) throw new Error(`Nilai "${k}" tidak valid`);
+      }
+      await updateThreshold(payload);
+      setThresholdMsg({ type: 'ok', text: 'Threshold berhasil diperbarui!' });
+      fetchData();
+    } catch (err) {
+      setThresholdMsg({ type: 'err', text: err.message });
+    } finally {
+      setThresholdSaving(false);
+    }
+  };
+
+  const handleResetThreshold = () => {
+    Alert.alert(
+      'Reset Threshold',
+      'Kembalikan semua threshold ke nilai default?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Reset', style: 'destructive',
+          onPress: async () => {
+            try {
+              await resetThreshold();
+              setThresholdMsg({ type: 'ok', text: 'Threshold direset ke default.' });
+              fetchData();
+              setTimeout(() => setShowThresholdModal(false), 1200);
+            } catch (err) {
+              setThresholdMsg({ type: 'err', text: err.message });
+            }
+          },
+        },
+      ]
+    );
+  };
+  // ───────────────────────────────────────────────────────
+
   const getHistoryForParam = (id) => {
     const map = { 1: ['ph','pH'], 2: ['temperature','°C'], 3: ['tds','ppm'], 4: ['turbidity','NTU'] };
     const [field, unit] = map[id] || [];
@@ -203,7 +273,6 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
     ? { ...selectedData, history: getHistoryForParam(selectedParameter) }
     : null;
 
-  // ── UPDATED: show minutes → hours → days → date ──────────
   const formatLastUpdated = () => {
     if (!lastUpdated) return 'Memuat...';
     const diffMs  = Date.now() - lastUpdated.getTime();
@@ -227,6 +296,14 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
     cardRows.push(qualityData.slice(i, i + 2));
   }
 
+  // ── Threshold field config ─────────────────────────────
+  const THRESHOLD_FIELDS = [
+    { label: 'pH', minKey: 'ph_min', maxKey: 'ph_max' },
+    { label: 'Suhu (°C)', minKey: 'temp_min', maxKey: 'temp_max' },
+    { label: 'TDS (ppm)', minKey: 'tds_min', maxKey: 'tds_max' },
+    { label: 'Kekeruhan / TSS (NTU)', minKey: 'tss_min', maxKey: 'tss_max' },
+  ];
+
   return (
     <ScrollView
       style={styles.container}
@@ -237,10 +314,7 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.logoContainer}>
-            {/* ── UPDATED: logoCircle & logo lebih besar ── */}
-            <View style={styles.logoCircle}>
-              <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
-            </View>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <View>
               <Text style={styles.headerTitle}>UniFlow</Text>
               <Text style={styles.headerSubtitle}>Monitoring Kualitas Air</Text>
@@ -248,7 +322,7 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
           </View>
 
           <View style={styles.headerIcons}>
-            {/* Bell */}
+            {/* Notifications */}
             <TouchableOpacity onPress={() => setShowAlertsModal(true)} style={styles.statusIndicator}>
               <Ionicons name="notifications" size={20} color="#FFFFFF" />
               {unreadCount > 0 && (
@@ -263,11 +337,20 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
                 </View>
               )}
             </TouchableOpacity>
+
+            {/* About */}
             <TouchableOpacity onPress={onNavigateToAbout} style={styles.statusIndicator}>
               <Ionicons name="person" size={20} color="#FFFFFF" />
             </TouchableOpacity>
+
+            {/* AI Chat */}
             <TouchableOpacity onPress={onNavigateToAI} style={styles.statusIndicator}>
               <Ionicons name="chatbubble-ellipses" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            {/* Threshold Settings */}
+            <TouchableOpacity onPress={openThreshold} style={styles.statusIndicator}>
+              <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -290,7 +373,6 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
         </View>
       ) : (
         <>
-          {/* ── WQI floating card ── */}
           <View style={styles.statusSection}>
             <StatusCard
               onHistoryClick={() => setShowOverallHistory(true)}
@@ -299,7 +381,6 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
             />
           </View>
 
-          {/* ── Stats strip ── */}
           {stats && (
             <View style={styles.statsStrip}>
               {[
@@ -316,7 +397,6 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
             </View>
           )}
 
-          {/* ── Section header ── */}
           <View style={styles.metricsSection}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Parameter Air</Text>
@@ -324,7 +404,6 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
             </View>
           </View>
 
-          {/* ── Parameter cards 2×2 grid ── */}
           <View style={styles.cardsGrid}>
             {cardRows.map((row, rowIdx) => (
               <View key={rowIdx} style={styles.cardRow}>
@@ -339,7 +418,6 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
             ))}
           </View>
 
-          {/* ── Info card ── */}
           <View style={styles.infoSection}>
             <View style={styles.infoCard}>
               <View style={styles.infoRow}>
@@ -352,10 +430,18 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
         </>
       )}
 
-      {/* ── Alerts Modal ── */}
-      <Modal visible={showAlertsModal} animationType="slide" transparent onRequestClose={() => setShowAlertsModal(false)}>
+      {/* ══════════════════════════════════════════════════
+          ── Alerts Modal ──
+      ══════════════════════════════════════════════════ */}
+      <Modal
+        visible={showAlertsModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowAlertsModal(false)}
+      >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%' }}>
+            {/* Header */}
             <View style={{
               flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
               padding: 16, borderBottomWidth: 1, borderBottomColor: '#EAF4FB',
@@ -372,6 +458,8 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* List */}
             <ScrollView style={{ padding: 16 }}>
               {alerts.length === 0 ? (
                 <View style={{ padding: 32, alignItems: 'center' }}>
@@ -393,7 +481,9 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
                     <Text style={{ fontSize: 11, fontWeight: '700', color: alert.is_read ? '#9CA3AF' : (SEVERITY_TEXT[alert.severity] || '#DC2626') }}>
                       {alert.parameter?.toUpperCase()} — {SEVERITY_LABEL[alert.severity] || alert.severity}
                     </Text>
-                    {!alert.is_read && <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#EF4444', marginTop: 2 }} />}
+                    {!alert.is_read && (
+                      <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#EF4444', marginTop: 2 }} />
+                    )}
                   </View>
                   <Text style={{ fontSize: 13, color: '#374151', lineHeight: 18 }}>{alert.message}</Text>
                   <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
@@ -404,6 +494,153 @@ export default function Dashboard({ onNavigateToAbout, onNavigateToAI }) {
                   </Text>
                 </TouchableOpacity>
               ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ══════════════════════════════════════════════════
+          ── Threshold Modal ──
+      ══════════════════════════════════════════════════ */}
+      <Modal
+        visible={showThresholdModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowThresholdModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%' }}>
+
+            {/* Header */}
+            <View style={{
+              flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+              padding: 16, borderBottomWidth: 1, borderBottomColor: '#EAF4FB',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="settings-outline" size={18} color="#5AA3C8" />
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#1A3040' }}>Pengaturan Threshold</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowThresholdModal(false)}>
+                <Ionicons name="close" size={22} color="#8BAFC0" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+
+              {/* Status message */}
+              {thresholdMsg && (
+                <View style={{
+                  backgroundColor: thresholdMsg.type === 'ok' ? '#D1FAE5' : '#FEE2E2',
+                  borderRadius: 10, padding: 11, marginBottom: 14,
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                }}>
+                  <Ionicons
+                    name={thresholdMsg.type === 'ok' ? 'checkmark-circle' : 'alert-circle'}
+                    size={16}
+                    color={thresholdMsg.type === 'ok' ? '#065F46' : '#991B1B'}
+                  />
+                  <Text style={{
+                    color: thresholdMsg.type === 'ok' ? '#065F46' : '#991B1B',
+                    fontSize: 13, flex: 1,
+                  }}>
+                    {thresholdMsg.text}
+                  </Text>
+                </View>
+              )}
+
+              {/* Info note */}
+              <View style={{
+                backgroundColor: '#EFF8FF', borderRadius: 8, padding: 10, marginBottom: 16,
+                flexDirection: 'row', gap: 6,
+              }}>
+                <Ionicons name="information-circle-outline" size={14} color="#5AA3C8" style={{ marginTop: 1 }} />
+                <Text style={{ fontSize: 11, color: '#5AA3C8', flex: 1, lineHeight: 16 }}>
+                  Ubah nilai batas minimum dan maksimum untuk setiap parameter kualitas air. Alert akan dikirim jika nilai sensor melewati batas yang ditentukan.
+                </Text>
+              </View>
+
+              {/* Form fields */}
+              {thresholdForm && THRESHOLD_FIELDS.map(({ label, minKey, maxKey }) => (
+                <View key={label} style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#1A3040', marginBottom: 8 }}>
+                    {label}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {[
+                      { key: minKey, placeholder: 'Min' },
+                      { key: maxKey, placeholder: 'Max' },
+                    ].map(({ key, placeholder }) => (
+                      <View key={key} style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11, color: '#8BAFC0', marginBottom: 4, fontWeight: '500' }}>
+                          {placeholder}
+                        </Text>
+                        <TextInput
+                          keyboardType="numeric"
+                          value={String(thresholdForm[key] ?? '')}
+                          onChangeText={(v) =>
+                            setThresholdForm((prev) => ({ ...prev, [key]: v }))
+                          }
+                          style={{
+                            borderWidth: 1.5,
+                            borderColor: '#D1E8F5',
+                            borderRadius: 10,
+                            padding: 10,
+                            fontSize: 14,
+                            color: '#1A3040',
+                            backgroundColor: '#F0F9FF',
+                            fontWeight: '600',
+                          }}
+                          placeholderTextColor="#B0CFE0"
+                          placeholder={placeholder}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))}
+
+              {/* Save button */}
+              <TouchableOpacity
+                onPress={handleSaveThreshold}
+                disabled={thresholdSaving}
+                activeOpacity={0.85}
+                style={{
+                  backgroundColor: thresholdSaving ? '#A8D4EA' : '#5AA3C8',
+                  borderRadius: 13, padding: 14,
+                  alignItems: 'center', marginTop: 6, marginBottom: 10,
+                  flexDirection: 'row', justifyContent: 'center', gap: 8,
+                }}
+              >
+                {thresholdSaving ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={16} color="#fff" />
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>
+                      Simpan Threshold
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Reset button */}
+              <TouchableOpacity
+                onPress={handleResetThreshold}
+                activeOpacity={0.85}
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: '#F87171',
+                  borderRadius: 13, padding: 14,
+                  alignItems: 'center', marginBottom: 32,
+                  flexDirection: 'row', justifyContent: 'center', gap: 8,
+                }}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#F87171" />
+                <Text style={{ color: '#F87171', fontWeight: '700', fontSize: 14 }}>
+                  Reset ke Default
+                </Text>
+              </TouchableOpacity>
+
             </ScrollView>
           </View>
         </View>

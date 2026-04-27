@@ -170,3 +170,28 @@ export const sendChatMessage = async (sessionId, message) => {
   });
   return handleResponse(res);
 };
+
+export const deleteChatSession = async (sessionId) => {
+  console.log('API DELETE START:', sessionId);
+
+  const res = await fetch(`${BASE_URL}/chat/sessions/${sessionId}`, {
+    method: 'DELETE',
+  });
+
+  console.log('API DELETE STATUS:', res.status);
+
+  // ✅ kalau sukses (200 / 204 / dll)
+  if (res.ok) return { success: true };
+
+  // ❗ fallback parsing
+  let text;
+  try {
+    text = await res.text();
+  } catch {
+    throw new Error('Gagal membaca response');
+  }
+
+  console.log('DELETE ERROR RESPONSE:', text);
+
+  throw new Error(text || 'Gagal menghapus');
+};
